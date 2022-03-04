@@ -44,7 +44,7 @@ Use nominal logistic regression model for the associations between response vari
 
 Obtain a model that summarizes the patterns in the data. 
 
-```{r grouped echo=FALSE}
+```{r grouped, echo=FALSE}
 data1.grouped <- tibble(
   Contact = c(rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3)),
   Satisfaction = c(rep("Low", 6), rep("Medium", 6), rep("High", 6)),
@@ -105,20 +105,20 @@ CI.logit.medium = coef(data1.mult)[c(1, 3, 5, 7)] + kronecker(t(c(0,qnorm(0.025)
 CI.logit.high = coef(data1.mult)[c(2, 4, 6, 8)] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
                                               t(t(sqrt(diag(invfisher.mult)[5:8]))))
 
-out.pi_1 <- cbind(pi_1, 
+out.pi_low <- cbind(pi_low, 
                   1/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))), 
                   1/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
                   )
-out.pi_2 <- cbind(pi_2, 
+out.pi_medium <- cbind(pi_medium, 
               (sum(exp(CI.logit.medium[2:4,2])))/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))),
               (sum(exp(CI.logit.medium[2:4,3])))/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
               )
 
-out.pi_3 <- cbind(pi_3, 
+out.pi_high <- cbind(pi_high, 
               (sum(exp(CI.logit.high[2:4,2])))/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))),
               (sum(exp(CI.logit.high[2:4,3])))/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
               )
-out <- rbind(out.pi_1, out.pi_2, out.pi_3)
+out <- rbind(out.pi_low, out.pi_medium, out.pi_high)
 colnames(out)=c('Estimate of Odds Ratio','95% CI lower','95% CI upper')
 out %>% knitr::kable(digits = 3)
 ```
