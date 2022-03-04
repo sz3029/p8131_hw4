@@ -18,7 +18,7 @@ value = c(65, 130, 67, 34, 141, 130, 54, 76, 48, 47, 116, 105, 100, 111, 62, 100
 data1 <- tibble(
   Contact = c(rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3)),
   Satisfaction = c(rep("Low", 6), rep("Medium", 6), rep("High", 6)),
-  ApartmentType = c("Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
+  HouseType = c("Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
                     "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
                     "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House")
 )
@@ -29,13 +29,15 @@ Produce Summary Table:
 
 ```{r summary, echo=FALSE}
 # Apartment Type v.s. Satisfaction
-gmodels::CrossTable(data1$Satisfaction, data1$ApartmentType)
+gmodels::CrossTable(data1$Satisfaction, data1$HouseType)
 
 # Contact v.s. Satisfaction
 gmodels::CrossTable(data1$Satisfaction, data1$Contact)
 ```
 
-From the table we see that 
+From the table we see that among the high, medium and low satisfaction category, the percentage of residents live in apartment is the highest among others, and low contact higher comparing with high contact. Among apartment residents, most of them have high satisfaction, and among house residents, most of them have low satisfaction, then among tower block residents, most of them have high satisfaction. 
+
+Then among the high, medium and low satisfaction category, the percentage of residents having high contact with other residents is higher comparing with low contact. Among the high contact category, most residents have high satisfaction, and among the low contact category, most of them also have high satisfaction.
 
 
 ## 2. Nominal logistic regression model
@@ -48,7 +50,7 @@ Obtain a model that summarizes the patterns in the data.
 data1.grouped <- tibble(
   Contact = c(rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3)),
   Satisfaction = c(rep("Low", 6), rep("Medium", 6), rep("High", 6)),
-  ApartmentType = c("Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
+  HouseType = c("Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
                     "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
                     "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House"),
   Value = c(65, 130, 67, 34, 141, 130, 54, 76, 48, 47, 116, 105, 100, 111, 62, 100, 191, 104)
@@ -64,20 +66,99 @@ data1.sat <- data1.grouped %>%
 Construct a nominal logistic regression model
 
 ```{r nomial}
-data1.mult <- multinom(cbind(Sat.Low, Sat.Medium, Sat.High) ~ ApartmentType + Contact, data = data1.sat)
+data1.mult <- multinom(cbind(Sat.Low, Sat.Medium, Sat.High) ~ HouseType + Contact, data = data1.sat)
 summary(data1.mult)
 ```
 
-Goodness of fit:
+The multinomial model is $log(\frac{\pi_{medium}}{\pi_{low}}) = \beta_{01}+\beta_{11}(HouseType=House)+\beta_{21}(HouseType=Tower Block)+\beta_{31}(Contact = Low)$, and $log(\frac{\pi_{high}}{\pi_{low}}) = \beta_{02}+\beta_{12}(HouseType=House)+\beta_{22}(HouseType=Tower Block)+\beta_{32}(Contact = Low)$. 
+
+So our fitted multinomial model is:
+$$log(\frac{\pi_{medium}}{\pi_{low}}) = -0.2180364+ 0.06967922x_1+0.4067631x_2-0.2959832x_3$$
+$$log(\frac{\pi_{high}}{\pi_{low}}) = 0.2474047-0.30402275x_1+0.6415948x_2-0.3282264x_3$$
+### Odds Ratios
+
+Odds ratios with 95% confidence intervals:
+
+```{r}
+invfisher.mult <- vcov(data1.mult) # inverse of fisher information matrix
+CI.logit.medium = coef(data1.mult)[1,] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
+                                              t(t(sqrt(diag(invfisher.mult)[1:4]))))
+CI.logit.high = coef(data1.mult)[2,] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
+                                              t(t(sqrt(diag(invfisher.mult)[5:8]))))
+
+out.pi_medium <- exp(CI.logit.medium[2:4,])
+out.pi_high <- exp(CI.logit.high[2:4,])
+
+colnames(out.pi_medium)=c('Estimate of Odds Ratio','95% CI lower','95% CI upper')
+rownames(out.pi_medium) = c("House", "Tower Block", "Contact.Low")
+colnames(out.pi_high)=c('Estimate of Odds Ratio','95% CI lower','95% CI upper')
+rownames(out.pi_high) = c("House", "Tower Block", "Contact.Low")
+
+out.pi_medium %>% knitr::kable(digits = 3, caption = "For OR of Meidum over Low Satisfaction")
+out.pi_high %>% knitr::kable(digits = 3, caption = "For OR of High over Low Satisfaction")
+```
+
+### Association
+
+**To test the association between levels of satisfaction and contact with others, we perform chi-squared test**
+
+Test of Homogeneity: 
+
+$H_0:$ the proportions of low/medium/high satisfaction levels among contact levels are equal
+
+$H_1:$ not all proportions are equal
+
+```{r chisq1}
+#data.sc <- data1 %>%
+  #filter(Contact == 'High') %>%
+  #group_by(Satisfaction) %>%
+  #summarize(n = n())
+data.sc <- tibble(
+  contact.low = c(262, 178, 273, 262+178+273),
+  contact.high = c(305, 268, 395, 305+268+395),
+) %>%
+  t()
+chisq.test(data.sc)
+```
+
+The test gives p-value of $0.1618>0.05$. So we fail to reject the null hypothesis and conclude that there is no enough evidence showing that there is association between contact with others and satisfaction levels. 
+
+**To test the association between levels of satisfaction and housing types, we perform chi-squared test**
+
+Test of Homogeneity: 
+
+$H_0:$ the proportions of low/medium/high satisfaction levels among housing type are equal
+
+$H_1:$ not all proportions are equal
+
+
+```{r chisq2}
+#data.sc <- data1 %>%
+  #filter(HouseType == 'Tower Block') %>%
+  #group_by(Satisfaction) %>%
+  #summarize(n = n())
+data.sh <- tibble(
+  house = c(197, 153, 166, 197+153+166),
+  apartment = c(271, 192, 302, 271+192+302),
+  tower = c(99, 101, 200, 99+101+200)
+) %>%
+  t()
+chisq.test(data.sh)
+```
+
+The test gives p-value of approximately 0. So we reject the null hypothesis and conclude that there is association between housing type and satisfaction levels. 
+
+### Goodness of fit and Interaction
+
+Then we calculate chi-squared value to evaluate the goodness of fit of this model:
+
+$H_0:$ The model is close to the full model, $H_1:$ not close to full model, significant level is 0.05
 
 ```{r goodness}
 # goodness of fit
 pihat=predict(data1.mult,type='probs') 
 m=rowSums(data1.sat[,3:5])
 res.pearson=(data1.sat[,3:5]-pihat*m)/sqrt(pihat*m);res.pearson # pearson residuals
-```
-
-```{r chisq_dev}
 G.stat=sum(res.pearson^2) # Generalized Pearson Chisq Stat
 G.stat
 pval=1-pchisq(G.stat,df=(6-4)*(3-1)) 
@@ -88,60 +169,53 @@ D.stat = sum(2*data1.sat[,3:5]*log(data1.sat[,3:5]/(pihat*m)))
 D.stat
 ```
 
-The Generalized Pearson Chisq Statistics is $6.932341$. The p-value is $0.1395072 > 0.05$, so we can reject the null hypothesis and the model fit is good. The Deviance is $6.893028$.
+The Generalized Pearson Chisq Statistics is $6.932341$. The Deviance is $6.893028$. The p-value is $0.1395072 > 0.05$, so we do not reject the null hypothesis and the model fit is good. Since the model fit is good, there is no interaction of contact level by house type in our model. 
 
-```{r odds_ratio}
-pi_low <- 1/(1+sum(exp(coef(data1.mult))))
-pi_medium <- sum(exp(coef(data1.mult)[c(1,3,5,7)]))/(1+sum(exp(coef(data1.mult))))
-pi_high <- sum(exp(coef(data1.mult)[c(2,4,6,8)]))/(1+sum(exp(coef(data1.mult))))
-```
-
-Describe your findings (the pattern in the associations, odds ratios with 95% confidence intervals, goodness-of-fit). (Hint: use dummy variable for house types.) Is there interaction of contact level by house type?
-
-```{r}
-invfisher.mult <- vcov(data1.mult) # inverse of fisher information matrix
-CI.logit.medium = coef(data1.mult)[c(1, 3, 5, 7)] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
-                                              t(t(sqrt(diag(invfisher.mult)[1:4]))))
-CI.logit.high = coef(data1.mult)[c(2, 4, 6, 8)] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
-                                              t(t(sqrt(diag(invfisher.mult)[5:8]))))
-
-out.pi_low <- cbind(pi_low, 
-                  1/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))), 
-                  1/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
-                  )
-out.pi_medium <- cbind(pi_medium, 
-              (sum(exp(CI.logit.medium[2:4,2])))/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))),
-              (sum(exp(CI.logit.medium[2:4,3])))/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
-              )
-
-out.pi_high <- cbind(pi_high, 
-              (sum(exp(CI.logit.high[2:4,2])))/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))),
-              (sum(exp(CI.logit.high[2:4,3])))/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
-              )
-out <- rbind(out.pi_low, out.pi_medium, out.pi_high)
-colnames(out)=c('Estimate of Odds Ratio','95% CI lower','95% CI upper')
-out %>% knitr::kable(digits = 3)
-```
-
-
+## 3. Ordinal categories
 
 ```{r odinal}
+# Order dataset
 data1.grouped$Satisfaction = factor(data1.grouped$Satisfaction, levels = c("Low", "Medium", "High"), ordered=T)
 data1.grouped$Contact = factor(data1.grouped$Contact, levels = c("Low", "High"), ordered=T)
-data1.grouped$ApartmentType = as.factor(data1.grouped$ApartmentType)
+data1.grouped$ApartmentType = as.factor(data1.grouped$HouseType)
 
-data1.polr=polr(Satisfaction ~ ApartmentType + Contact, data = data1.grouped, weights = Value)
+data1.polr=polr(Satisfaction ~ HouseType + Contact, data = data1.grouped, weights = Value)
 summary(data1.polr)
 ```
 
-The model tells us
+The model shows the following relationships:
 
-Goodness of fit and discrepency:
+Let $X_1$ be type House, $X_2$ be type Tower Block, $X_3$ be low contact.
+
+Since the ordinal logistic regression model is parameterized as $logit(P(Y\leq j)) = \beta_{j0}-\eta_1x_1-...-\eta_px_p$ where $\eta_i=-\beta_i$, so the log odds are $logit(P(Y\leq j | x_i=1)) - logit(P(Y\leq j | x_i=0)) = -\eta_1 = -\beta_i$
+
+$$logit(P(Sat \leq low)) = log(\frac{\pi_{low}}{\pi_{medium}+\pi_{high}}) = -0.6226 -0.2353x_1+ 0.5010x_2+ 0.1785x_3$$
+$$logit(P(Sat \leq medium)) = log(\frac{\pi_{low}+\pi_{medium}}{\pi_{high}}) = 0.4899 -0.2353x_1+ 0.5010x_2+ 0.1785x_3$$
+Since $\beta_i=-\eta_i$, $exp(\beta_i) = \frac{1}{exp(\eta_i)} = \frac{P(Y>j|x_i=1)/P(Y\leq j|x_i=1)}{P(Y>j|x_i=0)/P(Y\leq j|x_i=0)}$.
+
+So the ORs are:
+
+```{r or_plr, message=FALSE}
+# 95% CI for OR
+exp(cbind(coef(data1.polr),confint(data1.polr)))
+exp(-0.6226)
+exp(0.4899)
+```
+
+The odds ratio across the all $J-1$ categories are the same. The interpretation for $j=1$ is: when holding the contact level at constant, the odds of having **high satisfaction** is 0.790 times the odds of having **low or medium satisfaction** if the residents live in **house** comparing with residents live in **other types of housing**, and the odds of having **high satisfaction** is 1.650 times the odds of having **low or medium satisfaction** if the resident lives in **tower block** comparing with residents in **other types of housing**. 
+
+Holding the housing type at constant, the odds of having **high satisfaction** is 1.195 times the odds of having **low or medium satisfaction** if the resident has **low contact** with others. 
+
+Also, when the resident **lives in apartment** and has **high contact** with other residents, the odds of him having **low satisfaction** is 0.5365476 times the odds of having **medium and high satisfaction**. 
+
+When the resident **lives in apartment** and **has high contact** with other residents, the odds of him having **low and medium satisfaction** is 1.632153 times the odds of him having **high satisfaction**. 
+
+### Goodness of fit and discrepancy:
 
 ```{r goodness_ord}
 pihat=predict(data1.polr,data1.sat,type='p')
 m=rowSums(data1.sat[,3:5])
-res.pearson=(data1.sat[,3:5]-pihat*m)/sqrt(pihat*m);res.pearson # pearson residuals
+res.pearson=(data1.sat[,3:5]-pihat*m)/sqrt(pihat*m) # pearson residuals
 
 G=sum(res.pearson^2)
 G
@@ -151,9 +225,17 @@ numparam=2+3 # total num of param
 pval=1-pchisq(G ,df=numsamp-numparam)
 pval # fits well
 ```
+
 The p-value is 0.112962 > 0.05, so the model fits the data well.
 
-The largest error are 
+The pearson residual tells us where is the largest discrepancy:
+
+```{r discre}
+res.pearson
+max(abs(res.pearson))
+```
+
+The largest discrepancy is when the satisfaction is high, and the resident lives in house, has high contact with other residents. 
 
 
 
