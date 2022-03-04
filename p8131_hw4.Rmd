@@ -1,0 +1,159 @@
+---
+title: "P8131 HW4"
+output: pdf_document
+author: Shihui Zhu, sz3029
+---
+
+```{r library, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(MASS)
+library(nnet)
+```
+
+## 1. Summarize the data using appropriate tables of percentages to show the pair-wise associations between the levels of satisfaction and 1) contact with other residents and 2) type of housing. Comment on patterns in the associations.
+
+```{r input}
+value = c(65, 130, 67, 34, 141, 130, 54, 76, 48, 47, 116, 105, 100, 111, 62, 100, 191, 104)
+data1 <- tibble(
+  Contact = c(rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3)),
+  Satisfaction = c(rep("Low", 6), rep("Medium", 6), rep("High", 6)),
+  ApartmentType = c("Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
+                    "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
+                    "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House")
+)
+data1 = data1[rep(seq_len(nrow(data1)), value),]
+```
+
+Produce Summary Table:
+
+```{r summary, echo=FALSE}
+# Apartment Type v.s. Satisfaction
+gmodels::CrossTable(data1$Satisfaction, data1$ApartmentType)
+
+# Contact v.s. Satisfaction
+gmodels::CrossTable(data1$Satisfaction, data1$Contact)
+```
+
+From the table we see that 
+
+
+## 2. Nominal logistic regression model
+
+Use nominal logistic regression model for the associations between response variable, the levels of satisfaction, and the other two variables. 
+
+Obtain a model that summarizes the patterns in the data. 
+
+```{r grouped echo=FALSE}
+data1.grouped <- tibble(
+  Contact = c(rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3), rep("Low", 3), rep("High", 3)),
+  Satisfaction = c(rep("Low", 6), rep("Medium", 6), rep("High", 6)),
+  ApartmentType = c("Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
+                    "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House",
+                    "Tower Block", "Apartment", "House", "Tower Block", "Apartment", "House"),
+  Value = c(65, 130, 67, 34, 141, 130, 54, 76, 48, 47, 116, 105, 100, 111, 62, 100, 191, 104)
+)
+
+data1.sat <- data1.grouped %>%
+  pivot_wider(
+  names_from = "Satisfaction",
+  values_from = "Value",
+  names_prefix = "Sat.")
+```
+
+Construct a nominal logistic regression model
+
+```{r nomial}
+data1.mult <- multinom(cbind(Sat.Low, Sat.Medium, Sat.High) ~ ApartmentType + Contact, data = data1.sat)
+summary(data1.mult)
+```
+
+Goodness of fit:
+
+```{r goodness}
+# goodness of fit
+pihat=predict(data1.mult,type='probs') 
+m=rowSums(data1.sat[,3:5])
+res.pearson=(data1.sat[,3:5]-pihat*m)/sqrt(pihat*m);res.pearson # pearson residuals
+```
+
+```{r chisq_dev}
+G.stat=sum(res.pearson^2) # Generalized Pearson Chisq Stat
+G.stat
+pval=1-pchisq(G.stat,df=(6-4)*(3-1)) 
+pval# fit is good
+
+# deviance
+D.stat = sum(2*data1.sat[,3:5]*log(data1.sat[,3:5]/(pihat*m)))
+D.stat
+```
+
+The Generalized Pearson Chisq Statistics is $6.932341$. The p-value is $0.1395072 > 0.05$, so we can reject the null hypothesis and the model fit is good. The Deviance is $6.893028$.
+
+```{r odds_ratio}
+pi_low <- 1/(1+sum(exp(coef(data1.mult))))
+pi_medium <- sum(exp(coef(data1.mult)[c(1,3,5,7)]))/(1+sum(exp(coef(data1.mult))))
+pi_high <- sum(exp(coef(data1.mult)[c(2,4,6,8)]))/(1+sum(exp(coef(data1.mult))))
+```
+
+Describe your findings (the pattern in the associations, odds ratios with 95% confidence intervals, goodness-of-fit). (Hint: use dummy variable for house types.) Is there interaction of contact level by house type?
+
+```{r}
+invfisher.mult <- vcov(data1.mult) # inverse of fisher information matrix
+CI.logit.medium = coef(data1.mult)[c(1, 3, 5, 7)] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
+                                              t(t(sqrt(diag(invfisher.mult)[1:4]))))
+CI.logit.high = coef(data1.mult)[c(2, 4, 6, 8)] + kronecker(t(c(0,qnorm(0.025),-qnorm(0.025))),
+                                              t(t(sqrt(diag(invfisher.mult)[5:8]))))
+
+out.pi_1 <- cbind(pi_1, 
+                  1/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))), 
+                  1/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
+                  )
+out.pi_2 <- cbind(pi_2, 
+              (sum(exp(CI.logit.medium[2:4,2])))/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))),
+              (sum(exp(CI.logit.medium[2:4,3])))/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
+              )
+
+out.pi_3 <- cbind(pi_3, 
+              (sum(exp(CI.logit.high[2:4,2])))/(1+sum(exp(CI.logit.medium[2:4,2]) + exp(CI.logit.high[2:4,2]))),
+              (sum(exp(CI.logit.high[2:4,3])))/(1+sum(exp(CI.logit.medium[2:4,3]) + exp(CI.logit.high[2:4,3])))
+              )
+out <- rbind(out.pi_1, out.pi_2, out.pi_3)
+colnames(out)=c('Estimate of Odds Ratio','95% CI lower','95% CI upper')
+out %>% knitr::kable(digits = 3)
+```
+
+
+
+```{r odinal}
+data1.grouped$Satisfaction = factor(data1.grouped$Satisfaction, levels = c("Low", "Medium", "High"), ordered=T)
+data1.grouped$Contact = factor(data1.grouped$Contact, levels = c("Low", "High"), ordered=T)
+data1.grouped$ApartmentType = as.factor(data1.grouped$ApartmentType)
+
+data1.polr=polr(Satisfaction ~ ApartmentType + Contact, data = data1.grouped, weights = Value)
+summary(data1.polr)
+```
+
+The model tells us
+
+Goodness of fit and discrepency:
+
+```{r goodness_ord}
+pihat=predict(data1.polr,data1.sat,type='p')
+m=rowSums(data1.sat[,3:5])
+res.pearson=(data1.sat[,3:5]-pihat*m)/sqrt(pihat*m);res.pearson # pearson residuals
+
+G=sum(res.pearson^2)
+G
+
+numsamp=(3-1)*6 # degree of freedom for grouped data
+numparam=2+3 # total num of param
+pval=1-pchisq(G ,df=numsamp-numparam)
+pval # fits well
+```
+The p-value is 0.112962 > 0.05, so the model fits the data well.
+
+The largest error are 
+
+
+
